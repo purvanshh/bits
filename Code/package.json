@@ -1,0 +1,45 @@
+{
+  "name": "fleet-management-system",
+  "version": "1.0.0",
+  "description": "Fleet Management System - Backend",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "gateway": "node gateway/gateway.js",
+    "gateway:dev": "nodemon gateway/gateway.js",
+    "seed": "node src/seed/seeder.js",
+    "start:all": "node src/server.js & node gateway/gateway.js",
+    "test": "mocha",
+    "test:watch": "mocha --watch --watch-files src,gateway,test",
+    "frontend": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "install:all": "npm install && npm --prefix frontend install",
+    "docs:generate": "node documentation/generate-api-docs.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.21.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
+    "helmet": "^8.3.0",
+    "http-proxy-middleware": "^4.2.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.12.1",
+    "morgan": "^1.12.1",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "chai": "^4.5.0",
+    "mocha": "^10.8.2",
+    "nodemon": "^3.1.14",
+    "sinon": "^22.1.0",
+    "supertest": "^7.3.2"
+  }
+}
