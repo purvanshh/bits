@@ -1,0 +1,23 @@
+$ curl -i /api/vehicles  (no key)
+HTTP/1.1 401 Unauthorized
+{"success":false,"error":"MISSING_API_KEY","message":"API key is required. Include the x-api-key header."}
+
+$ curl -i /api/vehicles  (x-api-key: wrong)
+HTTP/1.1 401 Unauthorized
+{"success":false,"error":"INVALID_API_KEY","message":"The provided API key is invalid."}
+
+$ GET /api/vehicles with valid key + JWT
+HTTP 200
+
+$ 8 requests against a gateway started with RATE_LIMIT_MAX=4 (wrong key; limiter runs before the key check)
+401 401 401 401 429 429 429 429 
+
+$ one more request – full 429 response
+HTTP/1.1 429 Too Many Requests
+RateLimit-Limit: 4
+RateLimit-Remaining: 0
+Retry-After: 900
+{"success":false,"error":"RATE_LIMIT_EXCEEDED","message":"Too many requests from this IP. Please try again later.","retryAfterSeconds":900}
+
+$ GET /health is never rate limited
+HTTP 200

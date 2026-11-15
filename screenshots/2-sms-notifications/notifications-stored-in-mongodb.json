@@ -1,0 +1,74 @@
+[
+  {
+    "_id": "6af9f32062c1b4064410f5a9",
+    "vehicleId": "VH002",
+    "recipient": "+919999999999",
+    "message": "INFO: Vehicle VH002 status changed. New status: maintenance",
+    "eventType": "STATUS_CHANGE",
+    "provider": "MockSMS",
+    "status": "sent",
+    "failureReason": null,
+    "timestamp": "2026-11-15T18:00:00.255Z",
+    "__v": 0
+  },
+  {
+    "_id": "6af9f31c62c1b4064410f5a8",
+    "vehicleId": "VH001",
+    "recipient": "+919999999999",
+    "message": "ALERT: Emergency stop on vehicle VH001. Speed: 0 km/h, Temp: 90C, Battery: 60%",
+    "eventType": "EMERGENCY_STOP",
+    "provider": "MockSMS",
+    "status": "failed",
+    "failureReason": "MockSMS: network timeout (simulated failure)",
+    "timestamp": "2026-11-15T17:59:56.954Z",
+    "__v": 0
+  },
+  {
+    "_id": "6af9f31b62c1b4064410f5a6",
+    "vehicleId": "VH001",
+    "recipient": "+919999999999",
+    "message": "ALERT: Engine fault on vehicle VH001. Speed: 30 km/h, Temp: 125C, Battery: 70%",
+    "eventType": "ENGINE_FAULT",
+    "provider": "MockSMS",
+    "status": "sent",
+    "failureReason": null,
+    "timestamp": "2026-11-15T17:59:55.626Z",
+    "__v": 0
+  },
+  {
+    "_id": "6af9f31a62c1b4064410f5a4",
+    "vehicleId": "VH001",
+    "recipient": "+919999999999",
+    "message": "ALERT: Emergency stop on vehicle VH001. Speed: 0 km/h, Temp: 90C, Battery: 60%",
+    "eventType": "EMERGENCY_STOP",
+    "provider": "MockSMS",
+    "status": "sent",
+    "failureReason": null,
+    "timestamp": "2026-11-15T17:59:54.322Z",
+    "__v": 0
+  },
+  {
+    "_id": "6af9f31962c1b4064410f5a2",
+    "vehicleId": "VH001",
+    "recipient": "+919999999999",
+    "message": "ALERT: Low battery on vehicle VH001. Speed: 20 km/h, Temp: 80C, Battery: 12%",
+    "eventType": "LOW_BATTERY",
+    "provider": "MockSMS",
+    "status": "sent",
+    "failureReason": null,
+    "timestamp": "2026-11-15T17:59:53.005Z",
+    "__v": 0
+  },
+  {
+    "_id": "6af9f31762c1b4064410f5a0",
+    "vehicleId": "VH001",
+    "recipient": "+919999999999",
+    "message": "ALERT: Engine fault on vehicle VH001. Speed: 30 km/h, Temp: 125C, Battery: 70%",
+    "eventType": "ENGINE_FAULT",
+    "provider": "MockSMS",
+    "status": "sent",
+    "failureReason": null,
+    "timestamp": "2026-11-15T17:59:51.694Z",
+    "__v": 0
+  }
+]

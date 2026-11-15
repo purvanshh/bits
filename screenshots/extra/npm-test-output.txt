@@ -1,0 +1,75 @@
+
+> fleet-management-system@1.0.0 test
+> mocha
+
+
+
+  TEST 1: user login and JWT
+    ✔ logs in with valid credentials and returns a signed JWT (495ms)
+    ✔ rejects a wrong password with 401 (484ms)
+    ✔ rejects an unknown email with 401 and missing fields with 400 (38ms)
+    ✔ accepts a valid token on a protected route (283ms)
+    ✔ rejects missing, malformed, wrongly-signed and expired tokens with 401 (272ms)
+
+  TEST 7: API gateway
+    API key verification and forwarding
+      ✔ rejects a missing API key with 401
+      ✔ rejects an invalid API key with 401 and never echoes either key
+      ✔ forwards valid requests: login, then JWT-protected vehicle retrieval (703ms)
+      ✔ passes backend authorization errors through (401 JWT, 403 role) (345ms)
+      ✔ returns 400 for malformed JSON and 404 for unknown routes
+      ✔ /health is public, lists services and exposes no secrets
+      ✔ serves the OpenAPI JSON and Swagger UI without an API key
+    rate limiting
+      ✔ returns 429 with standard headers after the limit is exceeded, but not on /health
+    service outage
+      ✔ returns 503 when the target service is unreachable
+
+  TEST 8: Nominatim geocoding (HTTP mocked)
+    ✔ converts an address to coordinates using the Nominatim search API (88ms)
+    ✔ reports an unknown address as 404 ADDRESS_NOT_FOUND (42ms)
+    ✔ rejects blank / non-string / oversized addresses before any HTTP call
+    ✔ maps a timeout to 504 GEOCODER_TIMEOUT and a network failure to 502 (80ms)
+    ✔ rejects invalid coordinates returned by the provider (154ms)
+    ✔ handles HTTP 429: surfaces Retry-After and backs off without hitting the provider again (83ms)
+    ✔ serves repeated and equivalent addresses from cache with a single provider call (85ms)
+    ✔ persists to the database cache so a restart does not trigger a new request (160ms)
+    ✔ shares one upstream request between concurrent identical lookups and serialises different ones (215ms)
+(node:74617) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
+(Use `node --trace-warnings ...` to show where the warning was created)
+    ✔ POST /api/maps/geocode/:vehicleId saves coordinates to the vehicle (no real network) (518ms)
+    ✔ route: unknown vehicle → 404 without calling Nominatim; viewer → 403; missing address → 400 (657ms)
+
+  TEST 6: nearby vehicle search (Haversine)
+    ✔ returns vehicles inside the radius with correct distances, sorted, excluding others (520ms)
+    ✔ known reference distance: one degree of latitude ≈ 111.19 km
+    ✔ returns an empty list when nothing is in range (394ms)
+    ✔ validates parameters with 400 (467ms)
+
+  TEST 4: operational status and notifications
+(node:74617) [MONGOOSE] Warning: mongoose: the `new` option for `findOneAndUpdate()` and `findOneAndReplace()` is deprecated. Use `returnDocument: 'after'` instead.
+    ✔ status change generates and saves a "sent" MockSMS notification (481ms)
+    ✔ records a "failed" notification with a reason when MockSMS fails (531ms)
+    ✔ auto-detects low battery and high engine temperature from telemetry (668ms)
+    ✔ rejects an invalid status and serves notification history by role (877ms)
+
+  TEST 5: role-based access control
+    ✔ viewer cannot delete a vehicle (403); admin can (753ms)
+    ✔ fleet_manager cannot delete vehicles either (348ms)
+    ✔ only admins can list users (612ms)
+
+  TEST 3: telemetry submission and storage
+    ✔ stores telemetry with GPS coordinates and updates the vehicle location (542ms)
+[MockSMS] TO: +910000000000 | MSG: ALERT: Emergency stop on vehicle TMWI56UDG14. Speed: n/a, Temp: n/a, Battery: n/a
+    ✔ returns latest, history and fleet-wide recent events (981ms)
+    ✔ validates required fields and permissions (667ms)
+
+  TEST 2: vehicle registration and retrieval
+    ✔ registers a vehicle, stores it in the database and retrieves it (469ms)
+    ✔ lists vehicles with status filter and registration search (592ms)
+    ✔ returns 404 for an unknown vehicle, 409 for a duplicate and 400 for invalid data (561ms)
+    ✔ forbids viewers from registering vehicles and requires authentication (303ms)
+
+
+  43 passing (18s)
+

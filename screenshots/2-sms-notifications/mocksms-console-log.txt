@@ -1,0 +1,7 @@
+[MockSMS] TO: +919999999999 | MSG: ALERT: Low battery on vehicle VH001. Speed: 20 km/h, Temp: 80C, Battery: 12%
+[MockSMS] TO: +919999999999 | MSG: ALERT: Emergency stop on vehicle VH001. Speed: 0 km/h, Temp: 90C, Battery: 60%
+[MockSMS] TO: +919999999999 | MSG: ALERT: Engine fault on vehicle VH001. Speed: 30 km/h, Temp: 125C, Battery: 70%
+[MockSMS] TO: +919999999999 | MSG: ALERT: Low battery on vehicle VH001. Speed: 20 km/h, Temp: 80C, Battery: 12%
+[MockSMS] TO: +919999999999 | MSG: ALERT: Emergency stop on vehicle VH001. Speed: 0 km/h, Temp: 90C, Battery: 60%
+[MockSMS] TO: +919999999999 | MSG: ALERT: Engine fault on vehicle VH001. Speed: 30 km/h, Temp: 125C, Battery: 70%
+[MockSMS] TO: +919999999999 | MSG: INFO: Vehicle VH002 status changed. New status: maintenance

@@ -1,0 +1,183 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Fleet Management System – Project Report</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+*{box-sizing:border-box} body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#1e293b;line-height:1.5;font-size:10.5pt;margin:0}
+h1{font-size:22pt;margin:0 0 6pt} h2{font-size:15pt;border-bottom:2px solid #4f46e5;padding-bottom:3pt;margin:22pt 0 8pt;color:#312e81;page-break-after:avoid}
+h3{font-size:12pt;margin:14pt 0 4pt;color:#334155;page-break-after:avoid} h4{font-size:10.5pt;margin:10pt 0 2pt;page-break-after:avoid}
+p{margin:5pt 0} code{font-family:Menlo,monospace;font-size:8.8pt;background:#f1f5f9;padding:0 3pt;border-radius:3px}
+table{border-collapse:collapse;width:100%;margin:6pt 0;font-size:9pt;page-break-inside:auto} tr{page-break-inside:avoid}
+th{background:#eef2ff;text-align:left} th,td{border:1px solid #cbd5e1;padding:3pt 5pt;vertical-align:top}
+figure{margin:8pt 0;page-break-inside:avoid;text-align:center} figure img{border:1px solid #cbd5e1;border-radius:4px;max-width:100%}
+figcaption{font-size:8.8pt;color:#475569;margin-top:3pt} .muted{color:#64748b;font-weight:normal}
+.cover{height:240mm;display:flex;flex-direction:column;justify-content:center;page-break-after:always}
+.cover .sub{font-size:13pt;color:#475569;margin-bottom:28pt} .cover table{width:70%;font-size:11pt}
+.pb{page-break-before:always} ul.tests{margin:2pt 0 4pt 0;padding-left:0;list-style:none;font-size:8.8pt} ul.tests li{margin:1pt 0}
+.note{background:#fffbeb;border:1px solid #fcd34d;padding:5pt 8pt;border-radius:4px;margin:6pt 0}
+.ok{color:#15803d;font-weight:600} pre{background:#0f172a;color:#e2e8f0;padding:8pt;border-radius:4px;font-size:8.3pt;overflow:hidden;white-space:pre-wrap}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8pt}
+</style></head><body>
+
+<section class="cover">
+<h1>Fleet Management System</h1>
+<div class="sub">Third-party integrations, API Gateway, Swagger/OpenAPI documentation and automated testing<br>Staff Graded Assignment 2 – Project Report</div>
+<table>
+<tr><th style="width:35%">Student name</th><td>[ Enter your name ]</td></tr>
+<tr><th>Student ID</th><td>[ Enter your ID ]</td></tr>
+<tr><th>Course / Programme</th><td>[ Enter course ]</td></tr>
+<tr><th>Date</th><td>15 November 2026</td></tr>
+<tr><th>Technology</th><td>Node.js · Express · MongoDB Atlas · React · Leaflet · Swagger · Mocha/Chai</td></tr>
+<tr><th>Deployed link</th><td>None – the application runs locally (not deployed)</td></tr>
+</table>
+</section>
+
+<h2>Table of contents</h2>
+<ol><li>Introduction and objectives</li><li>Requirements traceability</li><li>System architecture</li><li>Third-party integrations</li><li>API Gateway</li><li>Swagger / OpenAPI documentation</li><li>Frontend dashboard</li><li>Automated testing</li><li>Demonstrations (screenshots)</li><li>Verification summary</li><li>Deployment status</li><li>Limitations and future work</li><li>Conclusion</li><li>Appendix: running the project</li></ol>
+
+<h2>1. Introduction and objectives</h2>
+<p>A fleet administrator needs to monitor vehicle locations, identify nearby vehicles, receive SMS notifications for important vehicle events and give developers clear API documentation. This project implements a Fleet Management System with a Node.js/Express/MongoDB backend, an Express-based API Gateway, a React dashboard, Swagger/OpenAPI documentation and an automated test suite.</p>
+<p><b>Objectives:</b> (1) integrate an external geolocation service for geocoding, GPS storage, radius search and map display; (2) integrate a mock SMS service with a sent/failed record; (3) simulate an API gateway with routing, API-key verification, rate limiting and error handling; (4) document all major endpoints with Swagger/OpenAPI; (5) verify seven critical flows with automated Mocha/Chai tests.</p>
+
+<h2>2. Requirements traceability</h2>
+<table><tr><th style="width:30%">Requirement</th><th>Implementation</th><th style="width:22%">Evidence</th></tr>
+<tr><td>Coordinates from vehicle addresses</td><td>OpenStreetMap Nominatim via <code>POST /api/maps/geocode</code> and <code>/geocode/:vehicleId</code>; cached, ≤1 req/s, error handling</td><td>Fig. 3; test group 8</td></tr>
+<tr><td>Store GPS coordinates from vehicles</td><td><code>POST /api/telemetry</code> stores the reading and updates the vehicle location</td><td>Test group 3</td></tr>
+<tr><td>Vehicles within X km of a location</td><td><code>GET /api/maps/nearby</code> – Haversine great-circle distance</td><td>Fig. 2; test group 6</td></tr>
+<tr><td>Map-based display</td><td>Leaflet + OpenStreetMap tiles; colour-coded markers, popups, nearby results and radius circle</td><td>Figs. 1–2</td></tr>
+<tr><td>SMS on critical events</td><td>MockSMS provider; ENGINE_FAULT, LOW_BATTERY, EMERGENCY_STOP</td><td>Fig. 4; test group 4</td></tr>
+<tr><td>Notify on status change</td><td><code>PATCH /api/vehicles/:id/status</code> sends a STATUS_CHANGE message</td><td>Fig. 4; test group 4</td></tr>
+<tr><td>Record sent/failed status</td><td><code>notifications</code> collection: <code>status</code>, <code>failureReason</code></td><td>Fig. 4</td></tr>
+<tr><td>Express API Gateway with the five routes</td><td><code>gateway/</code> – http-proxy-middleware</td><td>Figs. 5–7; test group 7</td></tr>
+<tr><td>Rate limiting</td><td>express-rate-limit, per IP, configurable, 429 + standard headers</td><td>Fig. 7; test group 7</td></tr>
+<tr><td>API-key verification</td><td><code>x-api-key</code> middleware (constant-time); 401 when missing/invalid</td><td>Figs. 5–6; test group 7</td></tr>
+<tr><td>Forward requests/responses; handle unavailable and invalid requests</td><td>Proxy pass-through; 503 service unavailable, 504 timeout, 400 malformed JSON</td><td>Test group 7</td></tr>
+<tr><td>Swagger/OpenAPI with models, auth, examples, errors</td><td><code>swagger-jsdoc</code> + <code>swagger-ui-express</code> at <code>/api-docs</code>: 26 operations, 17 schemas, two security schemes</td><td>Section 6, Fig. 8</td></tr>
+<tr><td>Mocha/Chai tests (≥5 flows)</td><td>All 7 listed flows plus Nominatim geocoding: 43 tests</td><td>Section 8</td></tr>
+<tr><td>Screenshots</td><td>Real captures of the four required demonstrations</td><td>Section 9</td></tr>
+</table>
+
+<h2 class="pb">3. System architecture</h2>
+<figure><svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica,Arial,sans-serif" font-size="13">
+<defs><marker id="a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#475569"/></marker></defs>
+<g stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#a)">
+<path d="M170 165 H230"/><path d="M400 165 H460"/><path d="M690 165 H730"/><path d="M570 95 V60 H730" /><path d="M570 255 V280 H730"/></g>
+<rect x="20" y="115" width="150" height="100" rx="8" fill="#e0e7ff" stroke="#4f46e5"/><text x="95" y="150" text-anchor="middle" font-weight="bold">React Dashboard</text><text x="95" y="170" text-anchor="middle">:5173 (Vite)</text><text x="95" y="190" text-anchor="middle" font-size="11">attaches x-api-key</text>
+<rect x="230" y="105" width="170" height="120" rx="8" fill="#fef3c7" stroke="#d97706"/><text x="315" y="135" text-anchor="middle" font-weight="bold">Express API Gateway</text><text x="315" y="155" text-anchor="middle">:4000</text><text x="315" y="175" text-anchor="middle" font-size="11">rate limit → API key → proxy</text><text x="315" y="195" text-anchor="middle" font-size="11">/health · /api-docs (Swagger)</text>
+<rect x="460" y="70" width="230" height="190" rx="8" fill="#dcfce7" stroke="#16a34a"/><text x="575" y="92" text-anchor="middle" font-weight="bold">Backend :5001 (JWT + RBAC)</text>
+<text x="575" y="120" text-anchor="middle">/api/users · User Service</text><text x="575" y="142" text-anchor="middle">/api/vehicles · Vehicle Service</text><text x="575" y="164" text-anchor="middle">/api/telemetry · Telemetry Service</text><text x="575" y="186" text-anchor="middle">/api/maps · Geolocation Service</text><text x="575" y="208" text-anchor="middle">/api/notifications · Notification Svc</text>
+<rect x="730" y="130" width="150" height="70" rx="8" fill="#e2e8f0" stroke="#475569"/><text x="805" y="160" text-anchor="middle" font-weight="bold">MongoDB Atlas</text><text x="805" y="180" text-anchor="middle" font-size="11">users · vehicles · telemetry…</text>
+<rect x="730" y="30" width="150" height="55" rx="8" fill="#fce7f3" stroke="#db2777"/><text x="805" y="55" text-anchor="middle" font-weight="bold">OpenStreetMap</text><text x="805" y="73" text-anchor="middle" font-size="11">Nominatim (≤1 req/s, cached)</text>
+<rect x="730" y="250" width="150" height="55" rx="8" fill="#fce7f3" stroke="#db2777"/><text x="805" y="275" text-anchor="middle" font-weight="bold">MockSMS provider</text><text x="805" y="293" text-anchor="middle" font-size="11">sent / failed records</text>
+<text x="450" y="322" text-anchor="middle" font-size="11" fill="#64748b">Clients (curl, Swagger UI, Postman) enter the gateway directly with x-api-key + Bearer JWT</text>
+</svg><figcaption>Architecture: requests flow through the gateway to five logical backend services; MongoDB, Nominatim and MockSMS are the data and integration layers.</figcaption></figure>
+<h3>3.1 Technology stack</h3>
+<table><tr><th>Layer</th><th>Technology</th></tr>
+<tr><td>Frontend</td><td>React 18, Vite 5, Tailwind CSS 3, React Router 6, Axios, Leaflet 1.9 + React-Leaflet 4.2, Lucide</td></tr>
+<tr><td>Gateway</td><td>Express 5, http-proxy-middleware, express-rate-limit, swagger-jsdoc, swagger-ui-express, helmet, cors</td></tr>
+<tr><td>Backend</td><td>Node.js, Express 5, Mongoose, jsonwebtoken, bcryptjs, axios</td></tr>
+<tr><td>Database</td><td>MongoDB Atlas</td></tr>
+<tr><td>Integrations</td><td>OpenStreetMap Nominatim (geocoding) and tiles (map); custom MockSMS provider</td></tr>
+<tr><td>Testing</td><td>Mocha, Chai 4, Supertest, Sinon</td></tr></table>
+<h3>3.2 Services</h3>
+<p>The five services are separate route/service modules in one backend process (a <i>modular monolith</i>) sharing the Mongoose models and JWT middleware. Splitting them into five processes would only duplicate this code. The gateway nevertheless routes each prefix through its own configurable URL (<code>USER_SERVICE_URL</code>, <code>VEHICLE_SERVICE_URL</code>, …), so any service can be extracted later with no gateway change. The backend uses port 5001 because macOS AirPlay Receiver occupies port 5000.</p>
+<h3>3.3 Data model</h3>
+<table><tr><th>Collection</th><th>Key fields</th></tr>
+<tr><td>users</td><td>name, email (unique), bcrypt password hash, phone, role (admin / fleet_manager / viewer)</td></tr>
+<tr><td>vehicles</td><td>vehicleId, registrationNumber, vehicleType, model, manufacturer, assignedDriver, operationalStatus, address, location{latitude, longitude}, batteryLevel</td></tr>
+<tr><td>telemetries</td><td>vehicleId, latitude, longitude, speed, engineTemperature, batteryLevel, eventType, timestamp</td></tr>
+<tr><td>notifications</td><td>vehicleId, recipient, message, eventType, provider (MockSMS), status (sent/failed), failureReason, timestamp</td></tr>
+<tr><td>geocodecaches</td><td>normalised address key, provider, coordinates, formatted address (30-day TTL)</td></tr></table>
+
+<h2>4. Third-party integrations</h2>
+<h3>4.1 Geolocation – OpenStreetMap</h3>
+<ul><li><b>Address → coordinates:</b> Nominatim Search API (<code>format=jsonv2&amp;limit=1</code>). Because Google Maps billing was unavailable, the provider is configurable (<code>GEOCODING_PROVIDER=nominatim</code>) and no Google key is used.</li>
+<li><b>Usage-policy compliance:</b> a single serialised queue (≥1.1 s between requests, never concurrent); memory + MongoDB cache with address normalisation and in-flight de-duplication; descriptive User-Agent; on HTTP 429 the client honours <code>Retry-After</code> and pauses all upstream calls; timeouts and out-of-range coordinates are rejected; no bulk geocoding; OpenStreetMap attribution shown in responses and on the map.</li>
+<li><b>GPS storage:</b> telemetry readings are saved and the vehicle's last known <code>location</code> is updated on every reading.</li>
+<li><b>Nearby search:</b> distance by the Haversine formula using stored coordinates only (no external call):</li></ul>
+<p style="text-align:center"><code>a = sin²(Δφ/2) + cos φ₁ · cos φ₂ · sin²(Δλ/2) &nbsp;&nbsp; d = 2R · atan2(√a, √(1−a)), R = 6371 km</code></p>
+<p>Vehicles with <code>d ≤ radius</code> are returned sorted by distance. The dashboard displays the server-computed distance and calculates none itself.</p>
+<h3>4.2 SMS notifications – MockSMS</h3>
+<p><code>notificationService.js</code> implements a custom SMS stub: it logs <code>[MockSMS] TO … | MSG …</code> and fails randomly about 15% of the time to exercise error handling. Every attempt is stored with <code>status</code> (sent/failed) and <code>failureReason</code>. Triggers: critical telemetry events (explicit, or detected automatically when engine temperature &gt; 110 °C or battery &lt; 20%) and vehicle operational-status changes. Delivery is fire-and-forget so API calls are not slowed.</p>
+
+<h2>5. API Gateway</h2>
+<table><tr><th>Gateway route</th><th>Target service</th></tr><tr><td><code>/api/users/*</code></td><td>User Service</td></tr><tr><td><code>/api/vehicles/*</code></td><td>Vehicle/Fleet Service</td></tr><tr><td><code>/api/telemetry/*</code></td><td>Telemetry Service</td></tr><tr><td><code>/api/maps/*</code></td><td>Geolocation Service</td></tr><tr><td><code>/api/notifications/*</code></td><td>Notification Service</td></tr></table>
+<p>Processing order for <code>/api/*</code>: <b>rate limiter → API-key check → JSON parsing → proxy</b>. <code>/health</code>, <code>/api-docs</code> and <code>/api-docs.json</code> are public.</p>
+<table><tr><th>Situation</th><th>Status</th><th>Code</th></tr>
+<tr><td>Missing / invalid API key</td><td>401</td><td>MISSING_API_KEY / INVALID_API_KEY</td></tr>
+<tr><td>Rate limit exceeded (headers <code>RateLimit-*</code>, <code>Retry-After</code>)</td><td>429</td><td>RATE_LIMIT_EXCEEDED</td></tr>
+<tr><td>Malformed JSON</td><td>400</td><td>MALFORMED_JSON</td></tr>
+<tr><td>Service unreachable / timeout</td><td>503 / 504</td><td>SERVICE_UNAVAILABLE / GATEWAY_TIMEOUT</td></tr>
+<tr><td>Invalid/expired JWT, forbidden role</td><td>401 / 403</td><td>from backend (passed through)</td></tr></table>
+<p><b>Two security layers.</b> <i>Gateway authentication</i> (<code>x-api-key</code>) decides whether a client may use the platform; <i>backend authorization</i> (JWT + role) decides what a user may do. The key is compared in constant time, stripped before forwarding, and never logged or returned. Roles: <b>admin</b> (everything, incl. deleting vehicles and managing users), <b>fleet_manager</b> (register/edit vehicles, status, telemetry, geocoding, all notifications) and <b>viewer</b> (read-only).</p>
+
+<h2 class="pb">6. Swagger / OpenAPI documentation</h2>
+<p>Served at <code>http://localhost:4000/api-docs</code> (JSON at <code>/api-docs.json</code>), generated with swagger-jsdoc. It documents 26 operations with request/response models, example requests and responses, required roles, error responses and status codes, and two security schemes: <code>ApiKeyAuth</code> (header <code>x-api-key</code>) and <code>BearerAuth</code> (JWT). A complete written reference is in <code>documentation/API_REFERENCE.md</code>.</p>
+<table><tr><th>Method</th><th>Path</th><th>Summary</th><th>Auth</th><th>Role</th></tr><tr><td><b>GET</b></td><td><code>/health</code></td><td>Gateway and backend service health</td><td>Public</td><td>–</td></tr><tr><td><b>POST</b></td><td><code>/api/users/register</code></td><td>Register a user</td><td>API key</td><td>–</td></tr><tr><td><b>POST</b></td><td><code>/api/users/login</code></td><td>Log in and obtain a JWT</td><td>API key</td><td>–</td></tr><tr><td><b>GET</b></td><td><code>/api/users/me</code></td><td>Current user profile</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>GET</b></td><td><code>/api/users</code></td><td>List all users</td><td>API key + JWT</td><td>admin</td></tr><tr><td><b>GET</b></td><td><code>/api/users/{id}</code></td><td>Get user by ID</td><td>API key + JWT</td><td>admin</td></tr><tr><td><b>PUT</b></td><td><code>/api/users/{id}</code></td><td>Update a user</td><td>API key + JWT</td><td>admin</td></tr><tr><td><b>DELETE</b></td><td><code>/api/users/{id}</code></td><td>Delete a user</td><td>API key + JWT</td><td>admin</td></tr><tr><td><b>POST</b></td><td><code>/api/vehicles</code></td><td>Register a vehicle</td><td>API key + JWT</td><td>admin, fleet_manager</td></tr><tr><td><b>GET</b></td><td><code>/api/vehicles</code></td><td>List vehicles</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>GET</b></td><td><code>/api/vehicles/search</code></td><td>Search by registration number</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>GET</b></td><td><code>/api/vehicles/{vehicleId}</code></td><td>Get vehicle by ID</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>PUT</b></td><td><code>/api/vehicles/{vehicleId}</code></td><td>Update a vehicle</td><td>API key + JWT</td><td>admin, fleet_manager</td></tr><tr><td><b>DELETE</b></td><td><code>/api/vehicles/{vehicleId}</code></td><td>Delete a vehicle</td><td>API key + JWT</td><td>admin only</td></tr><tr><td><b>PATCH</b></td><td><code>/api/vehicles/{vehicleId}/status</code></td><td>Update operational status</td><td>API key + JWT</td><td>admin, fleet_manager</td></tr><tr><td><b>POST</b></td><td><code>/api/telemetry</code></td><td>Submit a telemetry record</td><td>API key + JWT</td><td>admin, fleet_manager</td></tr><tr><td><b>GET</b></td><td><code>/api/telemetry/recent</code></td><td>Recent telemetry events across the fleet</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>GET</b></td><td><code>/api/telemetry/{vehicleId}</code></td><td>Telemetry history</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>GET</b></td><td><code>/api/telemetry/{vehicleId}/latest</code></td><td>Latest telemetry record</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>POST</b></td><td><code>/api/maps/geocode</code></td><td>Geocode an address (OpenStreetMap Nominatim)</td><td>API key + JWT</td><td>admin, fleet_manager</td></tr><tr><td><b>POST</b></td><td><code>/api/maps/geocode/{vehicleId}</code></td><td>Geocode an address and save it to a vehicle</td><td>API key + JWT</td><td>admin, fleet_manager</td></tr><tr><td><b>GET</b></td><td><code>/api/maps/nearby</code></td><td>Find vehicles within a radius (Haversine)</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>GET</b></td><td><code>/api/maps/locations</code></td><td>All vehicles that have coordinates</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>GET</b></td><td><code>/api/notifications</code></td><td>All notification history</td><td>API key + JWT</td><td>admin, fleet_manager</td></tr><tr><td><b>GET</b></td><td><code>/api/notifications/vehicle/{vehicleId}</code></td><td>Notification history for a vehicle</td><td>API key + JWT</td><td>any role</td></tr><tr><td><b>POST</b></td><td><code>/api/notifications/test</code></td><td>Send a test MockSMS notification</td><td>API key + JWT</td><td>admin</td></tr></table>
+
+<h2>7. Frontend dashboard</h2>
+<p>A React single-page application provides: login with JWT handling and role-based pages; a dashboard (total/active/idle/maintenance vehicles, critical alerts, recent events, status distribution – all from live API data); vehicle management (list, register, edit, details, delete for admins, search by registration, filter by status); a live Leaflet map with a nearby-vehicle search; a telemetry page with a simulator; a notifications page with event/status filters and critical-event simulation; and an admin-only user-management page. All calls go through the API Gateway (the Vite proxy attaches the API key server-side so it is never present in browser code).</p>
+
+<h2 class="pb">8. Automated testing</h2>
+<p>Mocha + Chai with Supertest (HTTP) and Sinon (mocks). Tests use a separate database that is emptied before each test and dropped afterwards (the suite refuses to run against the main database). Nominatim and the MockSMS randomness are stubbed, so no external service is called; there is no dependency on Google Maps and tests are independent of each other. Run with <code>npm test</code>.</p>
+<p class="ok">Result: 43 passing, 0 failing (43 tests listed).</p>
+<table><tr><th>Assignment flow</th><th>Test group</th></tr>
+<tr><td>1. Login and JWT verification</td><td>TEST 1</td></tr><tr><td>2. Vehicle registration and retrieval</td><td>TEST 2</td></tr><tr><td>3. Telemetry submission and storage</td><td>TEST 3</td></tr><tr><td>4. Status update and notification triggering</td><td>TEST 4</td></tr><tr><td>5. Role-based access control</td><td>TEST 5</td></tr><tr><td>6. Nearby search with mocked geolocation</td><td>TEST 6</td></tr><tr><td>7. Gateway API key and rate limiting</td><td>TEST 7</td></tr><tr><td>Additional: Nominatim geocoding</td><td>TEST 8</td></tr></table>
+<h3>Test cases (from the recorded run)</h3><h4>TEST 1: user login and JWT <span class="muted">(5 tests)</span></h4><ul class="tests"><li>✔ logs in with valid credentials and returns a signed JWT</li><li>✔ rejects a wrong password with 401</li><li>✔ rejects an unknown email with 401 and missing fields with 400</li><li>✔ accepts a valid token on a protected route</li><li>✔ rejects missing, malformed, wrongly-signed and expired tokens with 401</li></ul><h4>TEST 2: vehicle registration and retrieval <span class="muted">(4 tests)</span></h4><ul class="tests"><li>✔ registers a vehicle, stores it in the database and retrieves it</li><li>✔ lists vehicles with status filter and registration search</li><li>✔ returns 404 for an unknown vehicle, 409 for a duplicate and 400 for invalid data</li><li>✔ forbids viewers from registering vehicles and requires authentication</li></ul><h4>TEST 3: telemetry submission and storage <span class="muted">(3 tests)</span></h4><ul class="tests"><li>✔ stores telemetry with GPS coordinates and updates the vehicle location</li><li>✔ returns latest, history and fleet-wide recent events</li><li>✔ validates required fields and permissions</li></ul><h4>TEST 4: operational status and notifications <span class="muted">(4 tests)</span></h4><ul class="tests"><li>✔ status change generates and saves a "sent" MockSMS notification</li><li>✔ records a "failed" notification with a reason when MockSMS fails</li><li>✔ auto-detects low battery and high engine temperature from telemetry</li><li>✔ rejects an invalid status and serves notification history by role</li></ul><h4>TEST 5: role-based access control <span class="muted">(3 tests)</span></h4><ul class="tests"><li>✔ viewer cannot delete a vehicle (403); admin can</li><li>✔ fleet_manager cannot delete vehicles either</li><li>✔ only admins can list users</li></ul><h4>TEST 6: nearby vehicle search (Haversine) <span class="muted">(4 tests)</span></h4><ul class="tests"><li>✔ returns vehicles inside the radius with correct distances, sorted, excluding others</li><li>✔ known reference distance: one degree of latitude ≈ 111.19 km</li><li>✔ returns an empty list when nothing is in range</li><li>✔ validates parameters with 400</li></ul><h4>TEST 7: API gateway <span class="muted">(9 tests)</span></h4><ul class="tests"><li>✔ [API key verification and forwarding] rejects a missing API key with 401</li><li>✔ [API key verification and forwarding] rejects an invalid API key with 401 and never echoes either key</li><li>✔ [API key verification and forwarding] forwards valid requests: login, then JWT-protected vehicle retrieval</li><li>✔ [API key verification and forwarding] passes backend authorization errors through (401 JWT, 403 role)</li><li>✔ [API key verification and forwarding] returns 400 for malformed JSON and 404 for unknown routes</li><li>✔ [API key verification and forwarding] /health is public, lists services and exposes no secrets</li><li>✔ [API key verification and forwarding] serves the OpenAPI JSON and Swagger UI without an API key</li><li>✔ [rate limiting] returns 429 with standard headers after the limit is exceeded, but not on /health</li><li>✔ [service outage] returns 503 when the target service is unreachable</li></ul><h4>TEST 8: Nominatim geocoding (HTTP mocked) <span class="muted">(11 tests)</span></h4><ul class="tests"><li>✔ converts an address to coordinates using the Nominatim search API</li><li>✔ reports an unknown address as 404 ADDRESS_NOT_FOUND</li><li>✔ rejects blank / non-string / oversized addresses before any HTTP call</li><li>✔ maps a timeout to 504 GEOCODER_TIMEOUT and a network failure to 502</li><li>✔ rejects invalid coordinates returned by the provider</li><li>✔ handles HTTP 429: surfaces Retry-After and backs off without hitting the provider again</li><li>✔ serves repeated and equivalent addresses from cache with a single provider call</li><li>✔ persists to the database cache so a restart does not trigger a new request</li><li>✔ shares one upstream request between concurrent identical lookups and serialises different ones</li><li>✔ POST /api/maps/geocode/:vehicleId saves coordinates to the vehicle (no real network)</li><li>✔ route: unknown vehicle → 404 without calling Nominatim; viewer → 403; missing address → 400</li></ul>
+
+<h2 class="pb">9. Demonstrations (screenshots)</h2>
+<p>All screenshots are real captures of the application running locally.</p>
+<h3>9.1 Vehicle geolocation and nearby vehicle retrieval</h3>
+<figure><img src="images/1-geolocation-and-nearby-vehicles/04-map-markers-popup.png" style="width:100%" alt="Figure 1 – Live map: multiple colour-coded vehicle markers on OpenStreetMap tiles; popup shows registration number, status, vehicle type and GPS coordinates; OSM attribution bottom-right."/><figcaption>Figure 1 – Live map: multiple colour-coded vehicle markers on OpenStreetMap tiles; popup shows registration number, status, vehicle type and GPS coordinates; OSM attribution bottom-right.</figcaption></figure>
+<figure><img src="images/1-geolocation-and-nearby-vehicles/05-nearby-vehicles-search.png" style="width:100%" alt="Figure 2 – Nearby search (centre 21.2514, 81.6296; radius 50 km): three vehicles returned with backend-calculated Haversine distances 0.00 km, 26.44 km and 36.37 km; the search radius is drawn on the map."/><figcaption>Figure 2 – Nearby search (centre 21.2514, 81.6296; radius 50 km): three vehicles returned with backend-calculated Haversine distances 0.00 km, 26.44 km and 36.37 km; the search radius is drawn on the map.</figcaption></figure>
+<figure><img src="images/1-geolocation-and-nearby-vehicles/03-vehicle-detail-geocoded.png" style="width:88%" alt="Figure 3 – Vehicle details: the address was obtained from OpenStreetMap Nominatim and the resulting coordinates (22.05610, 82.17077) were saved against the vehicle; latest telemetry and notification history are shown."/><figcaption>Figure 3 – Vehicle details: the address was obtained from OpenStreetMap Nominatim and the resulting coordinates (22.05610, 82.17077) were saved against the vehicle; latest telemetry and notification history are shown.</figcaption></figure>
+<h3>9.2 SMS notification generation</h3>
+<figure><img src="images/2-sms-notifications/06-sms-notifications-sent-failed.png" style="width:82%" alt="Figure 4 – Notifications: engine-fault, low-battery and emergency-stop alerts generated from submitted telemetry, plus a status-change message (“Vehicle VH002 status changed. New status: maintenance”). Both Sent and Failed (simulated MockSMS timeout, with failure reason) statuses are recorded."/><figcaption>Figure 4 – Notifications: engine-fault, low-battery and emergency-stop alerts generated from submitted telemetry, plus a status-change message (“Vehicle VH002 status changed. New status: maintenance”). Both Sent and Failed (simulated MockSMS timeout, with failure reason) statuses are recorded.</figcaption></figure>
+<h3>9.3 API Gateway routing and API-key verification</h3>
+<div class="two"><figure><img src="images/3-api-gateway/07-gateway-health.png" style="width:100%" alt="Figure 5a – Gateway /health: gateway online, five services reachable (no secrets exposed)."/><figcaption>Figure 5a – Gateway /health: gateway online, five services reachable (no secrets exposed).</figcaption></figure><figure><img src="images/3-api-gateway/08-gateway-missing-api-key-401.png" style="width:100%" alt="Figure 5b – Request without an API key → 401 MISSING_API_KEY."/><figcaption>Figure 5b – Request without an API key → 401 MISSING_API_KEY.</figcaption></figure></div>
+<figure><img src="images/3-api-gateway/12-swagger-execute-invalid-key-401.png" style="width:100%" alt="Figure 6a – Wrong API key → 401 INVALID_API_KEY (executed from Swagger UI through the gateway)."/><figcaption>Figure 6a – Wrong API key → 401 INVALID_API_KEY (executed from Swagger UI through the gateway).</figcaption></figure>
+<figure><img src="images/3-api-gateway/11-swagger-execute-vehicles-200.png" style="width:100%" alt="Figure 6b – Valid API key and JWT: the gateway routes GET /api/vehicles to the Vehicle Service and returns 200 with the vehicle list."/><figcaption>Figure 6b – Valid API key and JWT: the gateway routes GET /api/vehicles to the Vehicle Service and returns 200 with the vehicle list.</figcaption></figure>
+<figure><img src="images/3-api-gateway/09-gateway-rate-limit-429.png" style="width:100%" alt="Figure 7 – Rate limiting: after exceeding the limit (gateway started with RATE_LIMIT_MAX=4) the gateway returns 429 RATE_LIMIT_EXCEEDED. The terminal transcript (first four requests 401, the rest 429, with RateLimit-* and Retry-After headers) is in screenshots/3-api-gateway/curl-output.txt."/><figcaption>Figure 7 – Rate limiting: after exceeding the limit (gateway started with RATE_LIMIT_MAX=4) the gateway returns 429 RATE_LIMIT_EXCEEDED. The terminal transcript (first four requests 401, the rest 429, with RateLimit-* and Retry-After headers) is in screenshots/3-api-gateway/curl-output.txt.</figcaption></figure>
+<h3>9.4 Swagger UI documentation</h3>
+<figure><img src="images/4-swagger-ui/10-swagger-ui-overview.png" style="width:78%" alt="Figure 8 – Swagger UI at /api-docs: all endpoints grouped by service (Health, Users, Vehicles, Telemetry, Geolocation, Notifications), the two security layers and the Authorize button."/><figcaption>Figure 8 – Swagger UI at /api-docs: all endpoints grouped by service (Health, Users, Vehicles, Telemetry, Geolocation, Notifications), the two security layers and the Authorize button.</figcaption></figure>
+
+<h2>10. Verification summary</h2>
+<p>Beyond the automated tests, the following were exercised against the running stack (backend, gateway, frontend, MongoDB Atlas):</p>
+<table><tr><th>Check</th><th>Result</th></tr>
+<tr><td>Login with each role; invalid login rejected</td><td class="ok">Pass</td></tr>
+<tr><td>Vehicle registration, retrieval, update, search, deletion (via the frontend proxy)</td><td class="ok">Pass</td></tr>
+<tr><td>Telemetry submission; GPS stored; vehicle location updated</td><td class="ok">Pass</td></tr>
+<tr><td>Real Nominatim geocoding (two addresses); repeat served from cache; invalid address → 404</td><td class="ok">Pass</td></tr>
+<tr><td>Nearby search (3 vehicles within 50 km; empty result elsewhere)</td><td class="ok">Pass</td></tr>
+<tr><td>MockSMS: critical events and status change produced sent and failed records stored in MongoDB</td><td class="ok">Pass</td></tr>
+<tr><td>Gateway: valid key routed; missing/invalid key 401; rate limit 429; health unaffected</td><td class="ok">Pass</td></tr>
+<tr><td>Viewer denied admin-only actions (403); admin allowed</td><td class="ok">Pass</td></tr>
+<tr><td>Swagger UI loads; OpenAPI routes match the real Express routes (checked programmatically)</td><td class="ok">Pass</td></tr>
+<tr><td>Automated suite: 43 passing, 0 failing</td><td class="ok">Pass</td></tr></table>
+
+<h2>11. Deployment status</h2>
+<div class="note">The application has <b>not</b> been deployed; there is no deployed application/API link. Deployment was optional in the assignment. The complete system runs locally using the instructions in the Appendix.</div>
+
+<h2>12. Limitations and future work</h2>
+<ul><li>Self-registration accepts a <code>role</code> field, so anyone holding the API key can create an admin – acceptable for a local demo, to be restricted before real use.</li>
+<li>JWT is kept in <code>localStorage</code>; no refresh tokens or revocation. The gateway key is a shared secret, not per-user authentication.</li>
+<li>Rate-limit state is in memory (one gateway instance); a shared store such as Redis is needed to scale out.</li>
+<li>Public Nominatim and OSM tile servers are for light use only; the geocoder is serialised (≈1 s per uncached lookup). A self-hosted Nominatim or commercial provider is needed for production load.</li>
+<li>MockSMS fails ~15% of the time by design and has no retry; a real provider (e.g. Twilio) could replace it behind the same interface.</li>
+<li>The live map uses 30-second polling rather than WebSockets. Lists are not paginated. The frontend has no automated tests.</li></ul>
+
+<h2>13. Conclusion</h2>
+<p>All required elements were implemented and verified: OpenStreetMap-based geocoding, GPS storage, Haversine nearby search and a map interface; a MockSMS integration recording sent/failed notifications for critical events and status changes; an Express API Gateway with routing, API-key verification, rate limiting and error handling; complete Swagger/OpenAPI documentation; and an automated Mocha/Chai suite covering all seven listed flows (43 tests passing). Remaining limitations are listed above.</p>
+
+<h2 class="pb">Appendix – running the project</h2>
+<pre>npm run install:all            # install backend + frontend dependencies
+cp .env.example .env           # fill MONGODB_URI, JWT_SECRET, GATEWAY_API_KEY, NOMINATIM_USER_AGENT
+npm run seed                   # demo data (wipes the configured database)
+npm start                      # backend  :5001
+npm run gateway                # gateway  :4000  (Swagger UI /api-docs)
+npm run frontend               # frontend :5173
+npm test                       # automated tests</pre>
+<table><tr><th>Seeded account</th><th>Password</th><th>Role</th></tr><tr><td>admin@fleet.com</td><td>admin123</td><td>admin</td></tr><tr><td>manager@fleet.com</td><td>manager123</td><td>fleet_manager</td></tr><tr><td>viewer@fleet.com</td><td>viewer123</td><td>viewer</td></tr></table>
+<h3>Project size</h3>
+<table><tr><th>Area</th><th>Lines of JavaScript/JSX</th></tr><tr><td>Gateway (<code>gateway/</code>)</td><td>751</td></tr><tr><td>Backend (<code>src/</code>)</td><td>1,371</td></tr><tr><td>Tests (<code>test/</code>)</td><td>693</td></tr><tr><td>Frontend (<code>frontend/src/</code>)</td><td>1,450</td></tr></table>
+<h3>Supporting files</h3>
+<ul><li><code>README.md</code> – full project documentation</li><li><code>documentation/</code> – API reference, OpenAPI export, architecture, setup/testing, demo guide</li><li><code>screenshots/</code> – all screenshots and text evidence (MockSMS log, stored notifications, curl output, test output)</li></ul>
+</body></html>
