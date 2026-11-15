@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { @apply bg-slate-50 text-slate-800 antialiased; }
+  h1, h2, h3 { @apply tracking-tight; }
+}
+@layer components {
+  .card { @apply rounded-xl border border-slate-200 bg-white shadow-sm; }
+  .input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-100; }
+  .label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-brand-500/40 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700; }
+  .btn-secondary { @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50; }
+  .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
+  .th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500; }
+  .td { @apply px-4 py-3 text-sm; }
+}
+
+/* Leaflet custom marker */
+.fleet-marker { background: transparent; border: none; }
+.fleet-marker span {
+  display: block; width: 22px; height: 22px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.4);
+}
+.fleet-marker.selected span { width: 28px; height: 28px; box-shadow: 0 0 0 4px rgba(79,70,229,.35), 0 2px 6px rgba(0,0,0,.4); }
+.leaflet-container { font-family: inherit; }
