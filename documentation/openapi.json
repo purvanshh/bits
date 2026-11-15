@@ -1,0 +1,2693 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Fleet Management System API",
+    "version": "1.0.0",
+    "description": "Vehicle tracking, telemetry, geolocation and notification APIs behind a single API Gateway.\n\n### Two layers of security\n| Layer | Where | Mechanism | Answers |\n|---|---|---|---|\n| **Gateway authentication** | API Gateway | `x-api-key` header (`ApiKeyAuth`) | \"Is this client allowed to call the platform?\" → 401 |\n| **Backend authorization** | Backend services | `Authorization: Bearer <JWT>` (`BearerAuth`) + role (RBAC) | \"Who is the user and what may they do?\" → 401 / 403 |\n\n- **Login/register:** API key only. **Vehicle read:** API key + JWT. **Vehicle delete:** API key + JWT + `admin` role. **/health, /api-docs:** public.\n- Roles: `admin` (everything), `fleet_manager` (create/update vehicles, telemetry, geocoding, notification history), `viewer` (read-only).\n- Rate limiting: per IP, configurable; 429 with `RateLimit-*` headers.\n- Geocoding uses OpenStreetMap Nominatim — data © OpenStreetMap contributors (ODbL).\n\nClick **Authorize** to enter the API key and (after calling login) the JWT."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000",
+      "description": "API Gateway (single entry point)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Users",
+      "description": "User Service"
+    },
+    {
+      "name": "Vehicles",
+      "description": "Vehicle/Fleet Service"
+    },
+    {
+      "name": "Telemetry",
+      "description": "Telemetry Service"
+    },
+    {
+      "name": "Geolocation",
+      "description": "Geolocation Service (Nominatim + Haversine)"
+    },
+    {
+      "name": "Notifications",
+      "description": "Notification Service (MockSMS)"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": [],
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Gateway API key (GATEWAY_API_KEY)."
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT returned by POST /api/users/login."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "description": "Machine-readable code (gateway and geocoder errors)",
+            "example": "INVALID_API_KEY"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "description": "Present on gateway 429s"
+          },
+          "retryAfter": {
+            "type": "integer",
+            "description": "Present on geocoder 429s"
+          }
+        }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          },
+          "gateway": {
+            "type": "string",
+            "example": "online"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "services": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "route": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "latencyMs": {
+                  "type": "integer",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "fleet_manager",
+              "viewer"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UserRegistration": {
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "password"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6
+          },
+          "phone": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "fleet_manager",
+              "viewer"
+            ],
+            "default": "viewer"
+          }
+        }
+      },
+      "UserLogin": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthenticationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "$ref": "#/components/schemas/User"
+              },
+              "token": {
+                "type": "string",
+                "description": "JWT for `Authorization: Bearer`"
+              }
+            }
+          }
+        }
+      },
+      "GPSCoordinates": {
+        "type": "object",
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "nullable": true
+          }
+        }
+      },
+      "Vehicle": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "vehicleId": {
+            "type": "string",
+            "example": "VH001"
+          },
+          "registrationNumber": {
+            "type": "string",
+            "example": "CG04KA1001"
+          },
+          "vehicleType": {
+            "type": "string",
+            "enum": [
+              "truck",
+              "van",
+              "car",
+              "motorcycle",
+              "bus",
+              "other"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "assignedDriver": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationalStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "idle",
+              "maintenance",
+              "inactive"
+            ]
+          },
+          "address": {
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/GPSCoordinates"
+          },
+          "batteryLevel": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VehicleRegistration": {
+        "type": "object",
+        "required": [
+          "vehicleId",
+          "registrationNumber",
+          "vehicleType",
+          "model",
+          "manufacturer"
+        ],
+        "properties": {
+          "vehicleId": {
+            "type": "string"
+          },
+          "registrationNumber": {
+            "type": "string"
+          },
+          "vehicleType": {
+            "type": "string",
+            "enum": [
+              "truck",
+              "van",
+              "car",
+              "motorcycle",
+              "bus",
+              "other"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "assignedDriver": {
+            "type": "string"
+          },
+          "operationalStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "idle",
+              "maintenance",
+              "inactive"
+            ],
+            "default": "idle"
+          },
+          "address": {
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/GPSCoordinates"
+          },
+          "batteryLevel": {
+            "type": "number",
+            "default": 100
+          }
+        }
+      },
+      "VehicleStatusUpdate": {
+        "type": "object",
+        "required": [
+          "operationalStatus"
+        ],
+        "properties": {
+          "operationalStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "idle",
+              "maintenance",
+              "inactive"
+            ]
+          }
+        }
+      },
+      "Telemetry": {
+        "type": "object",
+        "required": [
+          "vehicleId",
+          "latitude",
+          "longitude"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "vehicleId": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "km/h"
+          },
+          "engineTemperature": {
+            "type": "number",
+            "nullable": true,
+            "description": "°C; > 110 auto-flags ENGINE_FAULT"
+          },
+          "batteryLevel": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true,
+            "description": "< 20 auto-flags LOW_BATTERY"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "ENGINE_FAULT",
+              "LOW_BATTERY",
+              "EMERGENCY_STOP"
+            ],
+            "default": "NORMAL"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        }
+      },
+      "GeocodingRequest": {
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "maxLength": 300,
+            "example": "Raipur Railway Station, Chhattisgarh, India"
+          }
+        }
+      },
+      "GeocodingResponse": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "formattedAddress": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "example": "nominatim"
+          },
+          "cached": {
+            "type": "boolean",
+            "description": "true when served from cache (no Nominatim request made)"
+          },
+          "attribution": {
+            "type": "string",
+            "example": "© OpenStreetMap contributors (https://www.openstreetmap.org/copyright)"
+          }
+        }
+      },
+      "NearbyVehicleSearch": {
+        "type": "object",
+        "required": [
+          "latitude",
+          "longitude",
+          "radius"
+        ],
+        "description": "Query parameters of GET /api/maps/nearby",
+        "properties": {
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "radius": {
+            "type": "number",
+            "description": "km"
+          }
+        }
+      },
+      "NearbyVehicle": {
+        "type": "object",
+        "properties": {
+          "vehicle": {
+            "$ref": "#/components/schemas/Vehicle"
+          },
+          "distance": {
+            "type": "number",
+            "description": "Haversine distance in km"
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "vehicleId": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "ENGINE_FAULT",
+              "LOW_BATTERY",
+              "EMERGENCY_STOP",
+              "STATUS_CHANGE"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "example": "MockSMS"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "failed"
+            ]
+          },
+          "failureReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Missing/invalid parameters, validation failure or malformed JSON (gateway: `MALFORMED_JSON`)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "name, email and password are required"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Gateway: missing/invalid `x-api-key` (`MISSING_API_KEY` / `INVALID_API_KEY`). Backend: missing/invalid/expired JWT or bad credentials.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "error": "INVALID_API_KEY",
+              "message": "The provided API key is invalid."
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Authenticated, but the JWT role is not allowed for this route",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Role 'viewer' is not authorized to access this route"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "Vehicle 'VH999' not found"
+            }
+          }
+        }
+      },
+      "AddressNotFound": {
+        "description": "Nominatim found no match for the address",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "error": "ADDRESS_NOT_FOUND",
+              "message": "No results found for address: \"zzzz\""
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Duplicate unique field (e.g. email, vehicleId)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "message": "A record with that vehicleId already exists"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Gateway rate limit exceeded (`RATE_LIMIT_EXCEEDED`, `AUTH_RATE_LIMIT_EXCEEDED`) or geocoder upstream limit (`GEOCODER_RATE_LIMITED`). Standard `RateLimit-*` and `Retry-After` headers are returned.",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds until retry"
+          },
+          "RateLimit-Limit": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "RateLimit-Remaining": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "RateLimit-Reset": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "error": "RATE_LIMIT_EXCEEDED",
+              "message": "Too many requests from this IP. Please try again later.",
+              "retryAfterSeconds": 540
+            }
+          }
+        }
+      },
+      "GeocoderError": {
+        "description": "Geocoding provider returned an error or invalid coordinates (`GEOCODER_ERROR`, `GEOCODER_UNAVAILABLE`, `GEOCODER_INVALID_COORDINATES`)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "error": "GEOCODER_UNAVAILABLE",
+              "message": "Geocoding provider is unreachable."
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Backend service unreachable (`SERVICE_UNAVAILABLE`)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "error": "SERVICE_UNAVAILABLE",
+              "message": "The vehicle service is currently unavailable."
+            }
+          }
+        }
+      },
+      "GatewayTimeout": {
+        "description": "Backend or geocoder timed out (`GATEWAY_TIMEOUT`, `GEOCODER_TIMEOUT`)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "error": "GATEWAY_TIMEOUT",
+              "message": "The vehicle service did not respond in time."
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Gateway and backend service health",
+        "description": "Public. Not rate limited and requires no API key or JWT. Returns status only — never URLs, keys or secrets. 503 when any backend is unreachable.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "All services healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
+                "example": {
+                  "status": "ok",
+                  "gateway": "online",
+                  "timestamp": "2026-11-10T09:00:00.000Z",
+                  "services": {
+                    "user": {
+                      "route": "/api/users",
+                      "status": "ok",
+                      "latencyMs": 12
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more services degraded or unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/register": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Register a user",
+        "description": "Creates a user and returns a JWT. Needs the API key only (no JWT). Gateway authentication: `x-api-key`. Backend authorization: `Authorization: Bearer <JWT>` + role check.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRegistration"
+              },
+              "example": {
+                "name": "New Viewer",
+                "email": "viewer2@fleet.com",
+                "password": "secret123",
+                "phone": "+919811111111",
+                "role": "viewer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticationResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "user": {
+                      "_id": "66f1a2b3c4d5e6f708192a01",
+                      "name": "Admin User",
+                      "email": "admin@fleet.com",
+                      "phone": "+919999999999",
+                      "role": "admin",
+                      "createdAt": "2026-11-01T10:00:00.000Z",
+                      "updatedAt": "2026-11-01T10:00:00.000Z"
+                    },
+                    "token": "<JWT>"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        }
+      }
+    },
+    "/api/users/login": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Log in and obtain a JWT",
+        "description": "Requires the API key but **not** a JWT. Stricter rate limit applies (brute-force protection). Gateway authentication: `x-api-key`. Backend authorization: `Authorization: Bearer <JWT>` + role check.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLogin"
+              },
+              "example": {
+                "email": "admin@fleet.com",
+                "password": "admin123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticationResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "user": {
+                      "_id": "66f1a2b3c4d5e6f708192a01",
+                      "name": "Admin User",
+                      "email": "admin@fleet.com",
+                      "phone": "+919999999999",
+                      "role": "admin",
+                      "createdAt": "2026-11-01T10:00:00.000Z",
+                      "updatedAt": "2026-11-01T10:00:00.000Z"
+                    },
+                    "token": "<JWT>"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        }
+      }
+    },
+    "/api/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Current user profile",
+        "description": "Any authenticated role.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "_id": "66f1a2b3c4d5e6f708192a01",
+                    "name": "Admin User",
+                    "email": "admin@fleet.com",
+                    "phone": "+919999999999",
+                    "role": "admin",
+                    "createdAt": "2026-11-01T10:00:00.000Z",
+                    "updatedAt": "2026-11-01T10:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List all users",
+        "description": "**Required role:** admin.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/User"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "MongoDB user `_id`",
+          "schema": {
+            "type": "string",
+            "example": "66f1a2b3c4d5e6f708192a01"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get user by ID",
+        "description": "**Required role:** admin.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update a user",
+        "description": "**Required role:** admin.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "fleet_manager",
+                      "viewer"
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "role": "fleet_manager"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Delete a user",
+        "description": "**Required role:** admin.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "User deleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/vehicles": {
+      "post": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "Register a vehicle",
+        "description": "**Required role:** admin, fleet_manager.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VehicleRegistration"
+              },
+              "example": {
+                "vehicleId": "VH100",
+                "registrationNumber": "CG04ZZ1234",
+                "vehicleType": "van",
+                "model": "Transit",
+                "manufacturer": "Ford",
+                "assignedDriver": "Test Driver"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Vehicle created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Vehicle"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "_id": "66f1a2b3c4d5e6f708192a3b",
+                    "vehicleId": "VH001",
+                    "registrationNumber": "CG04KA1001",
+                    "vehicleType": "truck",
+                    "model": "Actros",
+                    "manufacturer": "Mercedes",
+                    "assignedDriver": "Ramesh Kumar",
+                    "operationalStatus": "active",
+                    "address": "Raipur, Chhattisgarh",
+                    "location": {
+                      "latitude": 21.2514,
+                      "longitude": 81.6296
+                    },
+                    "batteryLevel": 85,
+                    "createdAt": "2026-11-01T10:00:00.000Z",
+                    "updatedAt": "2026-11-10T08:30:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "List vehicles",
+        "description": "Any authenticated role. Newest first.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filter by operational status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "idle",
+                "maintenance",
+                "inactive"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "description": "Filter by vehicle type",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "truck",
+                "van",
+                "car",
+                "motorcycle",
+                "bus",
+                "other"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vehicles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer",
+                      "example": 1
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Vehicle"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "count": 1,
+                  "data": [
+                    {
+                      "_id": "66f1a2b3c4d5e6f708192a3b",
+                      "vehicleId": "VH001",
+                      "registrationNumber": "CG04KA1001",
+                      "vehicleType": "truck",
+                      "model": "Actros",
+                      "manufacturer": "Mercedes",
+                      "assignedDriver": "Ramesh Kumar",
+                      "operationalStatus": "active",
+                      "address": "Raipur, Chhattisgarh",
+                      "location": {
+                        "latitude": 21.2514,
+                        "longitude": 81.6296
+                      },
+                      "batteryLevel": 85,
+                      "createdAt": "2026-11-01T10:00:00.000Z",
+                      "updatedAt": "2026-11-10T08:30:00.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        }
+      }
+    },
+    "/api/vehicles/search": {
+      "get": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "Search by registration number",
+        "description": "Case-insensitive partial match. Any authenticated role.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Registration number fragment",
+            "schema": {
+              "type": "string",
+              "example": "CG04KA"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Vehicle"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/vehicles/{vehicleId}": {
+      "parameters": [
+        {
+          "name": "vehicleId",
+          "in": "path",
+          "required": true,
+          "description": "Business vehicle ID (not the Mongo `_id`)",
+          "schema": {
+            "type": "string",
+            "example": "VH001"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "Get vehicle by ID",
+        "description": "Any authenticated role.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vehicle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Vehicle"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "_id": "66f1a2b3c4d5e6f708192a3b",
+                    "vehicleId": "VH001",
+                    "registrationNumber": "CG04KA1001",
+                    "vehicleType": "truck",
+                    "model": "Actros",
+                    "manufacturer": "Mercedes",
+                    "assignedDriver": "Ramesh Kumar",
+                    "operationalStatus": "active",
+                    "address": "Raipur, Chhattisgarh",
+                    "location": {
+                      "latitude": 21.2514,
+                      "longitude": 81.6296
+                    },
+                    "batteryLevel": 85,
+                    "createdAt": "2026-11-01T10:00:00.000Z",
+                    "updatedAt": "2026-11-10T08:30:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "Update a vehicle",
+        "description": "**Required role:** admin, fleet_manager.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Any subset of vehicle fields",
+                "properties": {
+                  "assignedDriver": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "manufacturer": {
+                    "type": "string"
+                  },
+                  "vehicleType": {
+                    "type": "string"
+                  }
+                }
+              },
+              "example": {
+                "assignedDriver": "New Driver"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated vehicle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Vehicle"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "Delete a vehicle",
+        "description": "**Required role:** admin only. A fleet_manager or viewer JWT yields 403.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                },
+                "example": {
+                  "success": true,
+                  "message": "Vehicle deleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/vehicles/{vehicleId}/status": {
+      "patch": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "Update operational status",
+        "description": "**Required role:** admin, fleet_manager. Also triggers a STATUS_CHANGE MockSMS notification.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "description": "Business vehicle ID",
+            "schema": {
+              "type": "string",
+              "example": "VH001"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VehicleStatusUpdate"
+              },
+              "example": {
+                "operationalStatus": "maintenance"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated vehicle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Vehicle"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/telemetry": {
+      "post": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "Submit a telemetry record",
+        "description": "**Required role:** admin, fleet_manager. Updates the vehicle's last known GPS location and battery. engineTemperature > 110 auto-flags ENGINE_FAULT; batteryLevel < 20 auto-flags LOW_BATTERY. Critical events send a MockSMS notification (the mock fails ~15% of the time by design; failures are recorded with status \"failed\").",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Telemetry"
+              },
+              "example": {
+                "vehicleId": "VH001",
+                "latitude": 21.2514,
+                "longitude": 81.6296,
+                "speed": 65,
+                "engineTemperature": 85,
+                "batteryLevel": 80
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Telemetry stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Telemetry"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "_id": "66f1a2b3c4d5e6f708192a50",
+                    "vehicleId": "VH001",
+                    "latitude": 21.2514,
+                    "longitude": 81.6296,
+                    "speed": 65,
+                    "engineTemperature": 85,
+                    "batteryLevel": 80,
+                    "eventType": "NORMAL",
+                    "timestamp": "2026-11-10T09:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/telemetry/recent": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "Recent telemetry events across the fleet",
+        "description": "Any authenticated role. Newest first. Used by the dashboard.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Max records (default 20, max 500)",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "name": "hours",
+            "in": "query",
+            "required": false,
+            "description": "Only events from the last N hours",
+            "schema": {
+              "type": "number",
+              "example": 24
+            }
+          },
+          {
+            "name": "critical",
+            "in": "query",
+            "required": false,
+            "description": "true = only ENGINE_FAULT / LOW_BATTERY / EMERGENCY_STOP",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Telemetry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/telemetry/{vehicleId}": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "Telemetry history",
+        "description": "Any authenticated role. Newest first.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "description": "Business vehicle ID",
+            "schema": {
+              "type": "string",
+              "example": "VH001"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Max records (default 50)",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Telemetry"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/telemetry/{vehicleId}/latest": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "Latest telemetry record",
+        "description": "Any authenticated role.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "description": "Business vehicle ID",
+            "schema": {
+              "type": "string",
+              "example": "VH001"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Telemetry"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "_id": "66f1a2b3c4d5e6f708192a50",
+                    "vehicleId": "VH001",
+                    "latitude": 21.2514,
+                    "longitude": 81.6296,
+                    "speed": 65,
+                    "engineTemperature": 85,
+                    "batteryLevel": 80,
+                    "eventType": "NORMAL",
+                    "timestamp": "2026-11-10T09:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/maps/geocode": {
+      "post": {
+        "tags": [
+          "Geolocation"
+        ],
+        "summary": "Geocode an address (OpenStreetMap Nominatim)",
+        "description": "**Required role:** admin, fleet_manager. Converts an address to coordinates using Nominatim. Results are cached (memory + MongoDB) and requests are serialised to ≤1/second per the Nominatim usage policy, so uncached calls may take 1–2 s. Data © OpenStreetMap contributors (ODbL).",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeocodingRequest"
+              },
+              "example": {
+                "address": "Raipur Railway Station, Chhattisgarh, India"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Coordinates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/GeocodingResponse"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "latitude": 21.2403,
+                    "longitude": 81.6378,
+                    "formattedAddress": "Raipur Junction, Raipur, Chhattisgarh, India",
+                    "provider": "nominatim",
+                    "cached": false,
+                    "attribution": "© OpenStreetMap contributors (https://www.openstreetmap.org/copyright)"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/AddressNotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/GeocoderError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        }
+      }
+    },
+    "/api/maps/geocode/{vehicleId}": {
+      "post": {
+        "tags": [
+          "Geolocation"
+        ],
+        "summary": "Geocode an address and save it to a vehicle",
+        "description": "**Required role:** admin, fleet_manager. Verifies the vehicle exists first (an unknown ID never costs a Nominatim request), then stores address + coordinates on it.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "description": "Business vehicle ID",
+            "schema": {
+              "type": "string",
+              "example": "VH001"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeocodingRequest"
+              },
+              "example": {
+                "address": "Raipur Railway Station, Chhattisgarh, India"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Vehicle updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "vehicle": {
+                          "$ref": "#/components/schemas/Vehicle"
+                        },
+                        "coordinates": {
+                          "$ref": "#/components/schemas/GeocodingResponse"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "$ref": "#/components/responses/GeocoderError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        }
+      }
+    },
+    "/api/maps/nearby": {
+      "get": {
+        "tags": [
+          "Geolocation"
+        ],
+        "summary": "Find vehicles within a radius (Haversine)",
+        "description": "Any authenticated role. Computed locally with the Haversine formula over stored coordinates — never calls Nominatim.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "description": "Centre latitude (-90..90)",
+            "schema": {
+              "type": "number",
+              "example": 21.2514
+            }
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "description": "Centre longitude (-180..180)",
+            "schema": {
+              "type": "number",
+              "example": 81.6296
+            }
+          },
+          {
+            "name": "radius",
+            "in": "query",
+            "required": true,
+            "description": "Radius in kilometres (> 0)",
+            "schema": {
+              "type": "number",
+              "example": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vehicles sorted by distance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NearbyVehicle"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "count": 1,
+                  "data": [
+                    {
+                      "vehicle": {
+                        "_id": "66f1a2b3c4d5e6f708192a3b",
+                        "vehicleId": "VH001",
+                        "registrationNumber": "CG04KA1001",
+                        "vehicleType": "truck",
+                        "model": "Actros",
+                        "manufacturer": "Mercedes",
+                        "assignedDriver": "Ramesh Kumar",
+                        "operationalStatus": "active",
+                        "address": "Raipur, Chhattisgarh",
+                        "location": {
+                          "latitude": 21.2514,
+                          "longitude": 81.6296
+                        },
+                        "batteryLevel": 85,
+                        "createdAt": "2026-11-01T10:00:00.000Z",
+                        "updatedAt": "2026-11-10T08:30:00.000Z"
+                      },
+                      "distance": 0
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/maps/locations": {
+      "get": {
+        "tags": [
+          "Geolocation"
+        ],
+        "summary": "All vehicles that have coordinates",
+        "description": "Any authenticated role.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Located vehicles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Vehicle"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "All notification history",
+        "description": "**Required role:** admin, fleet_manager.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notifications, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/notifications/vehicle/{vehicleId}": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Notification history for a vehicle",
+        "description": "Any authenticated role.",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "path",
+            "required": true,
+            "description": "Business vehicle ID",
+            "schema": {
+              "type": "string",
+              "example": "VH004"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "count": 1,
+                  "data": [
+                    {
+                      "_id": "66f1a2b3c4d5e6f708192a60",
+                      "vehicleId": "VH004",
+                      "recipient": "+919999999999",
+                      "message": "ALERT: Engine fault on vehicle VH004.",
+                      "eventType": "ENGINE_FAULT",
+                      "provider": "MockSMS",
+                      "status": "sent",
+                      "failureReason": null,
+                      "timestamp": "2026-11-10T09:05:00.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/notifications/test": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Send a test MockSMS notification",
+        "description": "**Required role:** admin. The mock provider fails randomly (~15%); the stored notification then has status \"failed\".",
+        "security": [
+          {
+            "ApiKeyAuth": [],
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "vehicleId",
+                  "recipient",
+                  "message",
+                  "eventType"
+                ],
+                "properties": {
+                  "vehicleId": {
+                    "type": "string"
+                  },
+                  "recipient": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "eventType": {
+                    "type": "string",
+                    "enum": [
+                      "ENGINE_FAULT",
+                      "LOW_BATTERY",
+                      "EMERGENCY_STOP",
+                      "STATUS_CHANGE"
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "vehicleId": "VH001",
+                "recipient": "+919999999999",
+                "message": "Test alert",
+                "eventType": "STATUS_CHANGE"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Notification recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Notification"
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "_id": "66f1a2b3c4d5e6f708192a60",
+                    "vehicleId": "VH004",
+                    "recipient": "+919999999999",
+                    "message": "ALERT: Engine fault on vehicle VH004.",
+                    "eventType": "ENGINE_FAULT",
+                    "provider": "MockSMS",
+                    "status": "sent",
+                    "failureReason": null,
+                    "timestamp": "2026-11-10T09:05:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    }
+  }
+}
